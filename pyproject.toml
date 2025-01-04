@@ -58,6 +58,7 @@ sphinx-rtd-theme = "^3.0.2"
 
 [tool.poetry.scripts]
 build = "scripts.build:main"
+pypi = "scripts.pypi:main"
 testpypi = "scripts.testpypi:main"
 devsetup = "scripts.devsetup:main"
 docs = "scripts.docs:main"
