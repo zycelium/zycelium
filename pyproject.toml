@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "zycelium"
-version = "2025.0.0"
+version = "2025.0.1"
 description = "Personal Communication and Automation Network"
 authors = ["Harshad Sharma <harshad@sharma.io>"]
 license = "BSD-3-Clause"
@@ -28,7 +28,7 @@ classifiers = [
 ]
 
 [tool.bumpver]
-current_version = "2025.0.0"
+current_version = "2025.0.1"
 version_pattern = "YYYY.WW.PATCH[-TAGNUM]"
 
 [tool.bumpver.file_patterns]
@@ -46,6 +46,7 @@ bumpver = "^2024.1130"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.10.0"
+bumpver = "^2024.1130"
 isort = "^5.13.2"
 flake8 = "^7.1.1"
 mypy = "^1.14.1"
