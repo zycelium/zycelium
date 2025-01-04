@@ -1,0 +1,117 @@
+[tool.poetry]
+name = "zycelium"
+version = "0.0.1"
+description = "Personal Communication and Automation Network"
+authors = ["Harshad Sharma <harshad@sharma.io>"]
+license = "BSD-3-Clause"
+readme = "README.md"
+packages = [{ include = "zycelium", from = "src" }]
+keywords = [
+    "automation",
+    "chat",
+    "communication",
+    "framework",
+    "network",
+    "personal",
+    "self-hosted",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+    "Topic :: Home Automation",
+    "Topic :: Scientific/Engineering :: Human Machine Interfaces",
+]
+
+[tool.poetry.urls]
+"Homepage" = "https://github.com/zycelium/zycelium"
+"Bug Tracker" = "https://github.com/zycelium/zycelium/issues"
+"Documentation" = "https://zycelium.readthedocs.io"
+
+[tool.poetry.dependencies]
+python = ">=3.11,<4.0"
+
+[tool.poetry.group.dev.dependencies]
+black = "^24.10.0"
+isort = "^5.13.2"
+flake8 = "^7.1.1"
+mypy = "^1.14.1"
+pytest = "^8.3.4"
+pytest-asyncio = "^0.25.1"
+pytest-cov = "^6.0.0"
+sphinx = "^8.1.3"
+sphinx-autodoc-typehints = "^3.0.0"
+sphinx-rtd-theme = "^3.0.2"
+
+[tool.poetry.scripts]
+build = "scripts.build:main"
+testpypi = "scripts.testpypi:main"
+devsetup = "scripts.devsetup:main"
+docs = "scripts.docs:main"
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+include_trailing_comma = true
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+addopts = """
+    --doctest-modules
+    --durations=10
+    --durations-min=1.0
+    --cov=src/zycelium
+    --cov-report=term-missing
+    --cov-report=html
+    --cov-branch
+    --cov-fail-under=80
+"""
+testpaths = ["tests", "src/zycelium"]
+python_files = ["test_*.py", "*_test.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*", "*Test"]
+doctest_optionflags = ["NORMALIZE_WHITESPACE", "IGNORE_EXCEPTION_DETAIL"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+branch = true
+source = ["src/zycelium"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "if TYPE_CHECKING:",
+]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
