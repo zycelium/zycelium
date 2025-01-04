@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "zycelium"
-version = "0.0.1"
+version = "2025.0.0"
 description = "Personal Communication and Automation Network"
 authors = ["Harshad Sharma <harshad@sharma.io>"]
 license = "BSD-3-Clause"
@@ -27,6 +27,14 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Human Machine Interfaces",
 ]
 
+[tool.bumpver]
+current_version = "2025.0.0"
+version_pattern = "YYYY.WW.PATCH[-TAGNUM]"
+
+[tool.bumpver.file_patterns]
+"pyproject.toml" = ['version = "{version}"$']
+"src/zycelium/__init__.py" = ['^__version__ = "{version}"$']
+
 [tool.poetry.urls]
 "Homepage" = "https://github.com/zycelium/zycelium"
 "Bug Tracker" = "https://github.com/zycelium/zycelium/issues"
@@ -34,6 +42,7 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = ">=3.11,<4.0"
+bumpver = "^2024.1130"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.10.0"

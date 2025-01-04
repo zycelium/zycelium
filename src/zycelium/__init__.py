@@ -31,4 +31,4 @@ Basic usage example:
 ...     return a * b
 """
 
-__version__ = "0.1.0"
+__version__ = "2025.0.0"
