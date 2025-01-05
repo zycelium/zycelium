@@ -1,5 +1,5 @@
 """
-Zycelium Agent
+Zycelium Agent.
 """
 
 import asyncio
@@ -14,6 +14,12 @@ Hook: TypeAlias = Union[Callable[[], Any], Callable[[], Awaitable[Any]]]
 
 
 class Agent:
+    """
+    Args:
+        name: Optional name for the agent
+        uuid: Optional UUID string for the agent
+    """
+
     def __init__(self, name: Optional[str] = None, uuid: Optional[str] = None) -> None:
         self.name = name or ""
         self.uuid = uuid or uuid4().hex
@@ -22,6 +28,10 @@ class Agent:
         self._stop_hook: Optional[Hook] = None
 
     def run(self) -> None:
+        """Start the agent and run until stopped.
+
+        Can be called either synchronously or asynchronously.
+        """
         asyncio.run(self._run())
 
     @awaitable(run)
@@ -50,6 +60,10 @@ class Agent:
             await sync_to_async(self._stop_hook)()
 
     def stop(self) -> None:
+        """Stop the agent gracefully.
+
+        Can be called either synchronously or asynchronously.
+        """
         self._stop()
 
     @awaitable(stop)
@@ -60,12 +74,34 @@ class Agent:
         self._shutdown_trigger.set()
 
     def on_start(self, hook: Hook) -> Hook:
+        """Decorator to register a function to be called when agent starts.
+
+        Args:
+            hook: A callable or coroutine function with no parameters
+
+        Returns:
+            The original hook function
+
+        Raises:
+            ValueError: If hook is not callable
+        """
         if not iscoroutinefunction(hook) and not callable(hook):
             raise ValueError("Hook must be a coroutine or a callable")
         self._start_hook = hook
         return hook
 
     def on_stop(self, hook: Hook) -> Hook:
+        """Decorator to register a function to be called when agent stops.
+
+        Args:
+            hook: A callable or coroutine function with no parameters
+
+        Returns:
+            The original hook function
+
+        Raises:
+            ValueError: If hook is not callable
+        """
         if not iscoroutinefunction(hook) and not callable(hook):
             raise ValueError("Hook must be a coroutine or a callable")
         self._stop_hook = hook
