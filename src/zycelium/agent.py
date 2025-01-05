@@ -3,6 +3,7 @@ Zycelium Agent.
 """
 
 import asyncio
+import signal
 from asyncio import TimeoutError
 from inspect import iscoroutinefunction
 from typing import Any, Awaitable, Callable, Optional, TypeAlias, Union
@@ -43,35 +44,45 @@ class Agent:
         self._signal_handlers: dict[str, Handler] = {}
         self._signal_queue: asyncio.Queue = asyncio.Queue()
         self._signal_processor_task: Optional[asyncio.Task] = None
+        self._tasks: set[asyncio.Task] = set()
 
     # Agent Lifecycle
 
-    def run(self) -> None:
+    def run(self, handle_os_signals=True) -> None:
         """Start the agent and run until stopped.
 
         Can be called either synchronously or asynchronously.
         """
-        asyncio.run(self._run())
+        asyncio.run(self._run(handle_os_signals=handle_os_signals))
 
     @awaitable(run)
-    async def run(self) -> None:
-        await self._run()
+    async def run(self, handle_os_signals=True) -> None:
+        await self._run(handle_os_signals=handle_os_signals)
 
-    async def _run(self) -> None:
+    def _setup_signal_handlers(self) -> None:
+        """Set up handlers for OS signals."""
+        self.logger.debug("Setting up OS signal handlers")
+        try:
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                self._loop.add_signal_handler(sig, self._stop)
+        except NotImplementedError:  # pragma: no cover
+            # Windows doesn't support add_signal_handler
+            self.logger.warning("OS signal handlers not supported on this platform")
+
+    async def _run(self, handle_os_signals: bool) -> None:
         self.logger.info("Starting up")
         self._loop = asyncio.get_event_loop()
-        self._signal_processor_task = asyncio.create_task(self._process_signals())
+        if handle_os_signals:  # pragma: no cover
+            self._setup_signal_handlers()
+        self._signal_processor_task = asyncio.create_task(
+            self._process_signals(), name="signal_processor"
+        )
+        self.register_task(self._signal_processor_task)
         await self._run_start_handler()
         await self._shutdown_trigger.wait()
         self.logger.info("Shutting down")
         await self._run_stop_handler()
-        if self._signal_processor_task:  # pragma: no cover
-            self._signal_processor_task.cancel()
-            try:
-                await self._signal_processor_task
-            except asyncio.CancelledError:
-                self.logger.debug("Signal processor task cancelled")
-                pass
+        await self.cancel_tasks()
 
     async def _run_start_handler(self) -> None:
         if not self._start_handler:
@@ -103,7 +114,29 @@ class Agent:
         self._stop()
 
     def _stop(self) -> None:
+        """Trigger agent shutdown."""
+        self.logger.info("Stop signal received")
         self._shutdown_trigger.set()
+
+    def register_task(self, task: asyncio.Task) -> None:
+        """Register an asyncio task with the agent for lifecycle management."""
+        self.logger.debug(f"Registering task {task.get_name()}")
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def cancel_tasks(self) -> None:
+        """Cancel all registered tasks gracefully."""
+        if not self._tasks:  # pragma: no cover
+            return
+
+        self.logger.info(f"Cancelling {len(self._tasks)} tasks")
+        for task in self._tasks:
+            if not task.done():  # pragma: no cover
+                self.logger.debug(f"Cancelling task {task.get_name()}")
+                task.cancel()
+
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._tasks.clear()
 
     def on_start(self, handler: Handler) -> Handler:
         """Decorator to register a function to be called when agent starts.
@@ -189,7 +222,8 @@ class Agent:
         Args:
             signal: The signal name
             handler: A callable or coroutine function with no parameters
-            timeout: The maximum time in seconds to wait for the signal handler to complete
+            timeout: The maximum time in seconds to wait
+                     for the signal handler to complete
 
         Returns:
             The original handler function
