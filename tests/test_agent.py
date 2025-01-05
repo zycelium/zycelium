@@ -38,7 +38,6 @@ def test_agent_sync_hooks():
     assert stopped
 
 
-@pytest.mark.asyncio
 async def test_agent_async_hooks():
     agent = Agent()
     started = False
@@ -68,7 +67,6 @@ def test_invalid_hook_type():
         agent.on_stop("not-a-callable")
 
 
-@pytest.mark.asyncio
 async def test_agent_stop_without_hooks():
     agent = Agent()
     task = asyncio.create_task(agent.run())
