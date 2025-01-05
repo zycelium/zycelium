@@ -2,15 +2,11 @@
 
 import asyncio
 from typing import Callable, Optional
-from inspect import iscoroutinefunction
-from asgiref.sync import sync_to_async
 
 import nats
 from nats.aio.client import Client
-from nats.aio.msg import Msg
 
 from zycelium.logging import get_logger
-
 
 CONNECT_TIMEOUT = 10  # seconds
 OPERATION_TIMEOUT = 5  # seconds
