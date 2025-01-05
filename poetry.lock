@@ -12,6 +12,31 @@ files = [
 ]
 
 [[package]]
+name = "asgiref"
+version = "3.8.1"
+description = "ASGI specs, helper code, and adapters"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "asgiref-3.8.1-py3-none-any.whl", hash = "sha256:3e1e3ecc849832fe52ccf2cb6686b7a55f82bb1d6aee72a58826471390335e47"},
+    {file = "asgiref-3.8.1.tar.gz", hash = "sha256:c343bd80a0bec947a9860adb4c432ffa7db769836c64238fc34bdc3fec84d590"},
+]
+
+[package.extras]
+tests = ["mypy (>=0.800)", "pytest", "pytest-asyncio"]
+
+[[package]]
+name = "asyncgnostic"
+version = "0.1.2"
+description = "Python functions agnostic towards being called with await or otherwise."
+optional = false
+python-versions = ">=3.9,<4.0"
+files = [
+    {file = "asyncgnostic-0.1.2-py3-none-any.whl", hash = "sha256:74c603240643e0f1519874b559980a6a53fc4decb8ece2802576761a034954ff"},
+    {file = "asyncgnostic-0.1.2.tar.gz", hash = "sha256:bedf500e53e83f078347998fcef811015783e4f18dc1e88284c8d109d13f1949"},
+]
+
+[[package]]
 name = "babel"
 version = "2.16.0"
 description = "Internationalization utilities"
@@ -991,4 +1016,4 @@ zstd = ["zstandard (>=0.18.0)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<4.0"
-content-hash = "0211bfc2edf2c3292c81d1c165fe08f1cc2ee5f2994c73c49f4f6aeb6d0883b3"
+content-hash = "b51ad9449d78e0f6a87dcf96f31efef5fd184b566c5d8c2f57aa00d2119339c2"
