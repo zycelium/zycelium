@@ -7,13 +7,15 @@ import os
 import subprocess
 from dataclasses import dataclass
 
-from liccheck.command_line import check_package
-from liccheck.command_line import generate_requirements_file_from_pyproject
-from liccheck.command_line import get_packages_info
-from liccheck.command_line import group_by
-from liccheck.command_line import merge_args
-from liccheck.command_line import read_strategy
-from liccheck.command_line import Level
+from liccheck.command_line import (
+    Level,
+    check_package,
+    generate_requirements_file_from_pyproject,
+    get_packages_info,
+    group_by,
+    merge_args,
+    read_strategy,
+)
 
 
 @dataclass
@@ -77,8 +79,9 @@ def check_package_licenses(args):
 
 
 def get_package_license_file_url(pypi_package_name):
-    import requests
     import json
+
+    import requests
 
     url = f"https://pypi.org/pypi/{pypi_package_name}/json"
     r = requests.get(url)

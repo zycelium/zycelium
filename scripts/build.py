@@ -4,7 +4,7 @@
 import sys
 from pathlib import Path
 
-from .utils import run_command
+from .utils import check_code, format_code, run_command, run_tests
 
 PROJECT_ROOT = Path(__file__).parent.parent
 SRC_DIR = PROJECT_ROOT / "src" / "zycelium"
@@ -14,30 +14,11 @@ DOCS_DIR = PROJECT_ROOT / "docs"
 
 def main() -> None:
     """Run the build script."""
-    # Format code
     if not all(
         [
-            run_command(
-                ["isort", "."],
-                "Running isort",
-                cwd=str(PROJECT_ROOT),
-                capture_output=False,
-            ),
-            run_command(
-                ["black", "."],
-                "Running black",
-                cwd=str(PROJECT_ROOT),
-                capture_output=False,
-            ),
-            run_command(
-                ["flake8", "src", "tests"], "Running flake8", cwd=str(PROJECT_ROOT)
-            ),
-            run_command(
-                ["mypy", "src", "tests"], "Running mypy", cwd=str(PROJECT_ROOT)
-            ),
-            run_command(
-                ["pytest"], "Running pytest with coverage", cwd=str(PROJECT_ROOT)
-            ),
+            format_code(PROJECT_ROOT),
+            check_code(PROJECT_ROOT),
+            run_tests(PROJECT_ROOT),
             run_command(
                 ["sphinx-build", "-b", "html", "docs/source", "docs/build/html"],
                 "Building documentation",

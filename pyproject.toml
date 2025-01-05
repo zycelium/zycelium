@@ -65,6 +65,7 @@ docs = "scripts.docs:main"
 licenses = "scripts.licenses:main"
 pypi = "scripts.pypi:main"
 testpypi = "scripts.testpypi:main"
+tests = "scripts.tests:main"
 
 [tool.isort]
 profile = "black"
