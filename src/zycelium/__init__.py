@@ -3,7 +3,7 @@
 from .agent import Agent
 from .logging import get_logger
 
-__version__ = "2025.0.1"
+__version__ = "2025.0.2"
 
 
 __all__ = [
