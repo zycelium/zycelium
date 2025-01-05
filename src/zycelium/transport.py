@@ -1,6 +1,7 @@
 """Zycelium Agent Transport"""
 
 import asyncio
+import json
 from typing import Callable, Optional
 
 import nats
@@ -19,6 +20,7 @@ class NatsTransport:
         self._subscriptions = {}  # track subscriptions by subject
         self._is_draining = False
         self.logger = get_logger(__name__, log_level)
+        self._request_semaphore = asyncio.Semaphore(10)  # Allow 10 concurrent requests
 
     @property
     def connected(self) -> bool:
@@ -88,48 +90,58 @@ class NatsTransport:
             self.logger.error(f"Failed to subscribe to {subject}: not connected")
             return
         try:
+            self.logger.debug(f"Attempting to subscribe to: {subject}")
             sub = await self._client.subscribe(subject, cb=callback)
             self._subscriptions[subject] = sub
-            self.logger.debug(f"Subscribed to: {subject}")
+            self.logger.debug(f"Successfully subscribed to: {subject}")
+            self.logger.debug(
+                f"Current subscriptions: {list(self._subscriptions.keys())}"
+            )
         except Exception as e:  # pragma: no cover
             self.logger.error(f"Error subscribing to {subject}: {e}")
 
     async def unsubscribe(self, subject: str) -> None:
         """Unsubscribe from a subject."""
-        if not self._client:  # pragma: no cover
-            self.logger.error(f"Failed to unsubscribe from {subject}: not connected")
+        if not self._client or not self._client.is_connected:
+            # Connection already closed, just remove from local tracking
+            self._subscriptions.pop(subject, None)
+            self.logger.debug(f"Removed subscription tracking for: {subject}")
             return
+
         try:
             if sub := self._subscriptions.pop(subject, None):
-                await sub.unsubscribe()
-                self.logger.debug(f"Unsubscribed from: {subject}")
+                # Check if subscription is still active before unsubscribing
+                if not sub._closed:  # pragma: no cover
+                    await sub.unsubscribe()
+                    self.logger.debug(f"Unsubscribed from: {subject}")
             else:  # pragma: no cover
                 pass
         except Exception as e:  # pragma: no cover
             self.logger.error(f"Error unsubscribing from {subject}: {e}")
+            # Still remove from tracking even if unsubscribe fails
+            self._subscriptions.pop(subject, None)
 
     async def request(self, subject: str, data: bytes) -> Optional[bytes]:
-        if not self._client:
+        if not self._client:  # pragma: no cover
             self.logger.error(f"Failed to send request to {subject}: not connected")
             return None
-        try:
-            async with asyncio.timeout(OPERATION_TIMEOUT):
-                return await self._client.request(subject, data)
-        except asyncio.TimeoutError:
-            self.logger.error(f"Request to {subject} timed out")
-            return None
-        except Exception as e:
-            self.logger.error(f"Error requesting from {subject}: {e}")
-            return None
 
-    async def flush(self) -> None:  # pragma: no cover
-        if not self._client:
-            self.logger.warning("Failed to flush: not connected")
-            return
-        try:
-            await self._client.flush()
-        except Exception as e:
-            self.logger.warning(f"Error during flush: {e}")
+        async with self._request_semaphore:  # Control concurrent requests
+            try:
+                self.logger.debug(f"Sending request to {subject} with data: {data!r}")
+                response = await self._client.request(subject, data)
+                self.logger.debug(
+                    f"Received response from {subject}: {response.data!r}"
+                )
+                return response
+            except asyncio.TimeoutError:  # pragma: no cover
+                self.logger.error(
+                    f"Request to {subject} timed out after {OPERATION_TIMEOUT}s"
+                )
+                return None
+            except Exception as e:  # pragma: no cover
+                self.logger.error(f"Error requesting from {subject}: {e}")
+                return None
 
     async def drain(self) -> None:
         if not self._client:  # pragma: no cover

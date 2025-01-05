@@ -6,6 +6,8 @@ import asyncio
 import json
 import signal
 from asyncio import TimeoutError
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from inspect import iscoroutinefunction
 from typing import Any, Awaitable, Callable, Optional, TypeAlias, Union
 from uuid import uuid4
@@ -15,6 +17,8 @@ from asyncgnostic import awaitable
 
 from zycelium.logging import get_logger
 from zycelium.transport import NatsTransport
+
+OPERATION_TIMEOUT = 5  # seconds
 
 # Type aliases
 
@@ -53,6 +57,10 @@ class Agent:
         self._transport = NatsTransport(log_level)
         self._event_queue: asyncio.Queue = asyncio.Queue()
         self._event_processor_task: Optional[asyncio.Task] = None
+        self._request_handlers = {}  # Add request handlers dict
+        self._request_queue: asyncio.Queue = asyncio.Queue()
+        self._request_processor_task: Optional[asyncio.Task] = None
+        self._thread_pool = ThreadPoolExecutor(max_workers=10)
 
     # Agent Lifecycle
 
@@ -114,13 +122,31 @@ class Agent:
             return
 
         self.logger.debug("Cleaning up event subscriptions")
-        for subject in self._subscriptions:
+        # Create a copy of subscriptions since we'll modify the set while iterating
+        for subject in list(self._subscriptions):
             try:
-                await self._transport.unsubscribe(subject)
-                self.logger.debug(f"Unsubscribed from event: {subject}")
+                if self._transport.connected:
+                    await self._transport.unsubscribe(subject)
+                    self.logger.debug(f"Unsubscribed from event: {subject}")
+                else:  # pragma: no cover
+                    # If transport is disconnected, just remove from tracking
+                    self._subscriptions.remove(subject)
+                    self.logger.debug(f"Removed subscription tracking for: {subject}")
             except Exception as e:  # pragma: no cover
                 self.logger.error(f"Error unsubscribing from {subject}: {e}")
+                # Still remove from tracking even if unsubscribe fails
+                self._subscriptions.discard(subject)
         self._subscriptions.clear()
+
+    async def _setup_request_subscriptions(self) -> None:
+        """Subscribe to all registered request handlers."""
+        self.logger.debug("Setting up request subscriptions")
+        for subject in self._request_handlers:
+            try:
+                await self._transport.subscribe(subject, self._handle_request)
+                self.logger.debug(f"Subscribed to request subject: {subject}")
+            except Exception as e:  # pragma: no cover
+                self.logger.error(f"Failed to subscribe to request {subject}: {e}")
 
     async def _run(
         self,
@@ -143,10 +169,17 @@ class Agent:
         self.register_task(self._signal_processor_task)
         self.register_task(self._event_processor_task)
 
+        # Add request processor task
+        self._request_processor_task = asyncio.create_task(
+            self._process_requests(), name="request_processor"
+        )
+        self.register_task(self._request_processor_task)
+
         if nats_uri:
             await self._transport.connect(nats_uri, nats_token)
             if self._transport.connected:
                 await self._setup_subscriptions()
+                await self._setup_request_subscriptions()
             else:  # pragma: no cover
                 pass
         await self._run_start_handler()
@@ -319,7 +352,7 @@ class Agent:
 
         return decorator
 
-    # Event Handling
+    # Events
 
     async def _handle_event(self, msg) -> None:
         """Handle incoming event message."""
@@ -379,3 +412,122 @@ class Agent:
     async def emit(self, subject: str, **kwargs) -> None:
         """Queue an event for emission."""
         await self._event_queue.put((subject, kwargs))
+
+    # Requests
+
+    async def _handle_request(self, msg) -> None:
+        """Handle incoming request message."""
+        try:
+            subject = msg.subject
+            data = json.loads(msg.data.decode())
+            handler = self._request_handlers.get(subject)
+            if handler:
+                try:
+                    result = await handler(**data)
+                    response = json.dumps(result).encode()
+                    await msg.respond(response)
+                except Exception as e:
+                    self.logger.error(f"Error in request handler: {e}")
+                    await msg.respond(b"null")  # Send null response on error
+            else:  # pragma: no cover
+                await msg.respond(b"null")  # No handler found
+        except Exception as e:  # pragma: no cover
+            self.logger.error(f"Error handling request: {e}")
+            await msg.respond(b"null")
+
+    def on_request(self, subject: str) -> Callable:
+        """Decorator to register a request handler.
+
+        Args:
+            subject: The request subject
+
+        Returns:
+            Decorator function
+
+        Example:
+            @agent.on_request("greet")
+            async def handle_greet(name: str):
+                return {"greeting": f"Hello {name}!"}
+        """
+
+        def decorator(handler: Handler) -> Handler:
+            if not iscoroutinefunction(handler) and not callable(handler):
+                raise ValueError("Handler must be a coroutine or a callable")
+
+            # Wrap sync handler to run in thread pool
+            if not iscoroutinefunction(handler):
+
+                async def thread_handler(**kwargs):
+                    loop = asyncio.get_running_loop()
+                    return await loop.run_in_executor(
+                        self._thread_pool, lambda: handler(**kwargs)
+                    )
+
+                wrapped = thread_handler
+            else:
+                wrapped = handler
+
+            self._request_handlers[subject] = wrapped
+            return handler
+
+        return decorator
+
+    def request(
+        self, subject: str, timeout: float = OPERATION_TIMEOUT, **kwargs
+    ) -> Optional[dict]:
+        """Send a request and wait for response (synchronously)."""
+        if not self._loop or self._loop.is_closed():  # pragma: no cover
+            self.logger.error("No active event loop available for sync request")
+            return None
+        data = json.dumps(kwargs).encode()
+
+        # Run in the existing event loop
+        future = asyncio.run_coroutine_threadsafe(
+            self._async_request(subject, data), self._loop
+        )
+        try:
+            response = future.result(timeout=timeout)
+            return json.loads(response.decode()) if response else None
+        except FuturesTimeoutError:
+            self.logger.error(f"Request to {subject} timed out")
+            return None
+        except Exception as e:  # pragma: no cover
+            self.logger.error(f"Error making sync request to {subject}: {e}")
+            return None
+
+    @awaitable(request)
+    async def request(
+        self, subject: str, timeout: float = OPERATION_TIMEOUT, **kwargs
+    ) -> Optional[dict]:
+        """Send a request and wait for response (asynchronously)."""
+        data = json.dumps(kwargs).encode()
+        try:
+            response = await asyncio.wait_for(
+                self._transport.request(subject, data), timeout=timeout
+            )
+            return json.loads(response.data.decode()) if response else None
+        except asyncio.TimeoutError:  # pragma: no cover
+            self.logger.error(f"Request to {subject} timed out")
+            return None
+        except Exception as e:  # pragma: no cover
+            self.logger.error(f"Error making async request to {subject}: {e}")
+            return None
+
+    async def _async_request(self, subject: str, data: bytes) -> Optional[bytes]:
+        """Helper for sync request to await transport call."""
+        response = await self._transport.request(subject, data)
+        return response.data if response else None
+
+    async def _process_requests(self) -> None:
+        """Process incoming requests."""
+        self.logger.debug("Starting request processor")
+        while True:  # pragma: no cover
+            subject, kwargs = await self._request_queue.get()
+            self.logger.debug(f"Processing request '{subject}'")
+            try:
+                handler = self._request_handlers.get(subject)
+                if handler:
+                    await handler(**kwargs)
+            except Exception as e:
+                self.logger.error(f"Error processing request {subject}: {e}")
+                self._request_queue.task_done()
