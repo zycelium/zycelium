@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from zycelium import Agent
@@ -107,3 +109,22 @@ async def test_mixed_sync_async_signals():
     await agent.run()
     assert sync_received
     assert async_received
+
+
+async def test_signal_handler_timeout():
+    agent = Agent()
+    handler_completed = False
+
+    @agent.on_start
+    async def startup():
+        await agent.signal("slow-signal")
+        await agent.stop()
+
+    @agent.on_signal("slow-signal", timeout=0.1)
+    async def handle_slow():
+        nonlocal handler_completed
+        await asyncio.sleep(1.0)  # Sleep longer than timeout
+        handler_completed = True
+
+    await agent.run()
+    assert not handler_completed  # Handler should not complete due to timeout

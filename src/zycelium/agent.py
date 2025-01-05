@@ -3,6 +3,7 @@ Zycelium Agent.
 """
 
 import asyncio
+from asyncio import TimeoutError
 from inspect import iscoroutinefunction
 from typing import Any, Awaitable, Callable, Optional, TypeAlias, Union
 from uuid import uuid4
@@ -32,6 +33,7 @@ class Agent:
     ) -> None:
         self.name = name or ""
         self.uuid = uuid or uuid4().hex
+        self._loop = None  # type: asyncio.AbstractEventLoop
         logger_name = f"zycelium.agent.{self.name}" if self.name else "zycelium.agent"
         self.logger = get_logger(logger_name, level=log_level)
         self.logger.info("Initializing")
@@ -39,7 +41,6 @@ class Agent:
         self._start_handler: Optional[Handler] = None
         self._stop_handler: Optional[Handler] = None
         self._signal_handlers: dict[str, Handler] = {}
-        self._loop = None  # type: asyncio.AbstractEventLoop
         self._signal_queue: asyncio.Queue = asyncio.Queue()
         self._signal_processor_task: Optional[asyncio.Task] = None
 
@@ -166,18 +167,29 @@ class Agent:
         if not handler:  # pragma: no cover
             self.logger.warning(f"No handler registered for signal '{signal}'")
             return
-        self.logger.debug(f"Running handler for signal '{signal}'")
-        if iscoroutinefunction(handler):
-            await handler()
-        else:
-            await sync_to_async(handler)()
 
-    def on_signal(self, signal: str) -> Callable[[Handler], Handler]:
+        self.logger.debug(f"Running handler for signal '{signal}'")
+        timeout = getattr(handler, "__signal_timeout__", 10)
+
+        try:
+            if iscoroutinefunction(handler):
+                await asyncio.wait_for(handler(), timeout=timeout)
+            else:
+                await asyncio.wait_for(sync_to_async(handler)(), timeout=timeout)
+        except TimeoutError:  # pragma: no cover
+            self.logger.error(
+                f"Signal handler for '{signal}' timed out after {timeout} seconds"
+            )
+        except Exception as e:  # pragma: no cover
+            self.logger.error(f"Signal handler for '{signal}' failed: {str(e)}")
+
+    def on_signal(self, signal: str, timeout=10) -> Callable[[Handler], Handler]:
         """Decorator to register a function to be called when a signal is received.
 
         Args:
             signal: The signal name
             handler: A callable or coroutine function with no parameters
+            timeout: The maximum time in seconds to wait for the signal handler to complete
 
         Returns:
             The original handler function
@@ -189,6 +201,8 @@ class Agent:
         def decorator(handler: Handler) -> Handler:
             if not iscoroutinefunction(handler) and not callable(handler):
                 raise ValueError("Handler must be a coroutine or a callable")
+            setattr(handler, "__signal_name__", signal)
+            setattr(handler, "__signal_timeout__", timeout)
             self._signal_handlers[signal] = handler
             return handler
 
