@@ -10,6 +10,7 @@ Personal Communication and Automation Network
    :maxdepth: 2
    :caption: Contents:
 
+   agent
    api
 
 Indices and tables
