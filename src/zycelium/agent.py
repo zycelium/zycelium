@@ -10,7 +10,7 @@ from uuid import uuid4
 from asgiref.sync import sync_to_async
 from asyncgnostic import awaitable
 
-Hook: TypeAlias = Union[Callable[[], Any], Callable[[], Awaitable[Any]]]
+Handler: TypeAlias = Union[Callable[[], Any], Callable[[], Awaitable[Any]]]
 
 
 class Agent:
@@ -24,8 +24,8 @@ class Agent:
         self.name = name or ""
         self.uuid = uuid or uuid4().hex
         self._shutdown_trigger: asyncio.Event = asyncio.Event()
-        self._start_hook: Optional[Hook] = None
-        self._stop_hook: Optional[Hook] = None
+        self._start_handler: Optional[Handler] = None
+        self._stop_handler: Optional[Handler] = None
 
     def run(self) -> None:
         """Start the agent and run until stopped.
@@ -39,25 +39,25 @@ class Agent:
         await self._run()
 
     async def _run(self) -> None:
-        await self._run_start_hook()
+        await self._run_start_handler()
         await self._shutdown_trigger.wait()
-        await self._run_stop_hook()
+        await self._run_stop_handler()
 
-    async def _run_start_hook(self) -> None:
-        if not self._start_hook:
+    async def _run_start_handler(self) -> None:
+        if not self._start_handler:
             return
-        if iscoroutinefunction(self._start_hook):
-            await self._start_hook()
+        if iscoroutinefunction(self._start_handler):
+            await self._start_handler()
         else:
-            await sync_to_async(self._start_hook)()
+            await sync_to_async(self._start_handler)()
 
-    async def _run_stop_hook(self) -> None:
-        if not self._stop_hook:
+    async def _run_stop_handler(self) -> None:
+        if not self._stop_handler:
             return
-        if iscoroutinefunction(self._stop_hook):
-            await self._stop_hook()
+        if iscoroutinefunction(self._stop_handler):
+            await self._stop_handler()
         else:
-            await sync_to_async(self._stop_hook)()
+            await sync_to_async(self._stop_handler)()
 
     def stop(self) -> None:
         """Stop the agent gracefully.
@@ -73,36 +73,36 @@ class Agent:
     def _stop(self) -> None:
         self._shutdown_trigger.set()
 
-    def on_start(self, hook: Hook) -> Hook:
+    def on_start(self, handler: Handler) -> Handler:
         """Decorator to register a function to be called when agent starts.
 
         Args:
-            hook: A callable or coroutine function with no parameters
+            handler: A callable or coroutine function with no parameters
 
         Returns:
-            The original hook function
+            The original handler function
 
         Raises:
-            ValueError: If hook is not callable
+            ValueError: If handler is not callable
         """
-        if not iscoroutinefunction(hook) and not callable(hook):
-            raise ValueError("Hook must be a coroutine or a callable")
-        self._start_hook = hook
-        return hook
+        if not iscoroutinefunction(handler) and not callable(handler):
+            raise ValueError("Handler must be a coroutine or a callable")
+        self._start_handler = handler
+        return handler
 
-    def on_stop(self, hook: Hook) -> Hook:
+    def on_stop(self, handler: Handler) -> Handler:
         """Decorator to register a function to be called when agent stops.
 
         Args:
-            hook: A callable or coroutine function with no parameters
+            handler: A callable or coroutine function with no parameters
 
         Returns:
-            The original hook function
+            The original handler function
 
         Raises:
-            ValueError: If hook is not callable
+            ValueError: If handler is not callable
         """
-        if not iscoroutinefunction(hook) and not callable(hook):
-            raise ValueError("Hook must be a coroutine or a callable")
-        self._stop_hook = hook
-        return hook
+        if not iscoroutinefunction(handler) and not callable(handler):
+            raise ValueError("Handler must be a coroutine or a callable")
+        self._stop_handler = handler
+        return handler
