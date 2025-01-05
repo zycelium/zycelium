@@ -44,6 +44,7 @@ version_pattern = "YYYY.WW.PATCH[-TAGNUM]"
 python = ">=3.11,<4.0"
 asyncgnostic = "^0.1.2"
 asgiref = "^3.8.1"
+nats-py = "^2.9.0"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.10.0"
