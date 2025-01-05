@@ -8,6 +8,8 @@ import signal
 from asyncio import TimeoutError
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
+from contextlib import contextmanager
+from dataclasses import asdict
 from inspect import iscoroutinefunction
 from typing import Any, Awaitable, Callable, Optional, TypeAlias, Union
 from uuid import uuid4
@@ -61,6 +63,10 @@ class Agent:
         self._request_queue: asyncio.Queue = asyncio.Queue()
         self._request_processor_task: Optional[asyncio.Task] = None
         self._thread_pool = ThreadPoolExecutor(max_workers=10)
+        self._state: Optional[Any] = None
+        self._state_path: Optional[str] = (
+            f"{self.name}-state.json" if self.name else "agent-state.json"
+        )
 
     # Agent Lifecycle
 
@@ -531,3 +537,88 @@ class Agent:
             except Exception as e:
                 self.logger.error(f"Error processing request {subject}: {e}")
                 self._request_queue.task_done()
+
+    # Persistent state
+    @property
+    def state(self):
+        """Get the current state wrapped in a proxy that auto-saves on modifications."""
+        if self._state is None:
+            raise RuntimeError("agent.state is not initialized")
+        return StateProxy(self._state, self._save_state)
+
+    @state.setter
+    def state(self, value):
+        """Set the state value, preserving existing state if available."""
+        if self._state is None:  # First time state is being set
+            try:
+                with open(self._state_path, "r") as f:
+                    data = json.load(f)
+                    self._state = value.__class__(**data)
+                    self.logger.debug(f"Loaded existing state from {self._state_path}")
+            except FileNotFoundError:
+                self._state = value
+                self.logger.debug(f"No existing state, using new state")
+            except json.JSONDecodeError:
+                self.logger.error(f"Error loading state, using new state")
+                self._state = value
+        else:  # Subsequent state updates
+            self._state = value
+        self._save_state()
+
+    @contextmanager
+    def state_transaction(self):
+        """Context manager for atomic state modifications."""
+        if self._state is None:
+            raise RuntimeError("agent.state is not initialized")
+        yield self._state
+        self._save_state()
+
+    def _load_state(self):
+        if self._state_path is None or self._state is None:
+            return
+        try:
+            with open(self._state_path, "r") as f:
+                data = json.load(f)
+                self._state = self._state.__class__(**data)
+                self.logger.debug(f"Loaded state from {self._state_path}")
+                return self._state
+        except FileNotFoundError:
+            self.logger.debug(f"State file not found: {self._state_path}")
+        except json.JSONDecodeError:
+            self.logger.error(f"Error loading state from {self._state_path}")
+
+    def _save_state(self):
+        if self._state_path is None:
+            return
+        try:
+            with open(self._state_path, "w") as f:
+                json.dump(asdict(self._state), f)
+        except (json.JSONDecodeError, TypeError) as e:
+            self.logger.error(f"Error saving state to {self._state_path}: {e}")
+
+
+class StateProxy:
+    """Proxy that wraps state object and calls save_callback on modifications."""
+
+    def __init__(self, state: Any, save_callback: Callable):
+        self._state = state
+        self._save_callback = save_callback
+
+    def __getattr__(self, name):
+        attr = getattr(self._state, name)
+        if callable(attr):
+            # If it's a method, wrap it to detect modifications
+            def wrapped(*args, **kwargs):
+                result = attr(*args, **kwargs)
+                self._save_callback()
+                return result
+
+            return wrapped
+        return attr
+
+    def __setattr__(self, name, value):
+        if name in ("_state", "_save_callback"):
+            super().__setattr__(name, value)
+            return
+        setattr(self._state, name, value)
+        self._save_callback()
