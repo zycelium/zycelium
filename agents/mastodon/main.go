@@ -213,6 +213,28 @@ func (s *MastodonService) streamHomeTimeline(ctx context.Context) {
 	}
 }
 
+func (s *MastodonService) handlePost(req micro.Request) {
+	text := string(req.Data())
+	if text == "" {
+		req.Error("400", "Post text cannot be empty", []byte("empty post text"))
+		return
+	}
+
+	if debug {
+		log.Printf("DEBUG: Posting status: %s", text)
+	}
+
+	status, err := s.client.PostStatus(context.Background(), &mastodon.Toot{
+		Status: text,
+	})
+	if err != nil {
+		req.Error("500", "Failed to post status", []byte(err.Error()))
+		return
+	}
+
+	req.Respond([]byte(status.URL))
+}
+
 func main() {
 	flag.Parse()
 
@@ -236,6 +258,10 @@ func main() {
 			"followers_count":  strconv.FormatInt(svc.acc.FollowersCount, 10),
 			"following_count":  strconv.FormatInt(svc.acc.FollowingCount, 10),
 			"statuses_count":   strconv.FormatInt(svc.acc.StatusesCount, 10),
+		},
+		Endpoint: &micro.EndpointConfig{
+			Subject: "mastodon.post.now",
+			Handler: micro.HandlerFunc(svc.handlePost),
 		},
 	})
 	if err != nil {
