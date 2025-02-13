@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"math"
 	"net/url"
@@ -260,7 +261,8 @@ func main() {
 			"statuses_count":   strconv.FormatInt(svc.acc.StatusesCount, 10),
 		},
 		Endpoint: &micro.EndpointConfig{
-			Subject: "mastodon.post.now",
+			// Only subscribe to exact instance+username combination
+			Subject: fmt.Sprintf("mastodon.post.%s.%s.now", svc.getDomain(), svc.acc.Username),
 			Handler: micro.HandlerFunc(svc.handlePost),
 		},
 	})
