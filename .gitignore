@@ -32,3 +32,6 @@ datastore/
 
 # Experiments
 _attic/
+
+# Configuration files
+*.conf
