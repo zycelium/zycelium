@@ -29,3 +29,6 @@ build/
 
 # NATS JetStream data store
 datastore/
+
+# Experiments
+_attic/
