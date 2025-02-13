@@ -8,15 +8,14 @@ import (
 	"log"
 	"math"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/mattn/go-mastodon"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/micro"
+	"github.com/zycelium/zycelium/agent"
 )
 
 const (
@@ -30,30 +29,48 @@ func init() {
 	flag.BoolVar(&debug, "debug", false, "Enable debug logging")
 }
 
+type Config struct {
+	Debug       bool     `toml:"debug"`
+	Server      string   `toml:"server"`
+	AccessToken string   `toml:"access_token"`
+	NatsURLs    []string `toml:"nats_urls"`
+}
+
+// Validate implements agent.Configurable interface
+func (c *Config) Validate() error {
+	if c.Server == "" {
+		return fmt.Errorf("server URL is required")
+	}
+	if c.AccessToken == "" {
+		return fmt.Errorf("access token is required")
+	}
+	if len(c.NatsURLs) == 0 {
+		return fmt.Errorf("at least one NATS URL is required")
+	}
+	return nil
+}
+
 type MastodonService struct {
 	client *mastodon.Client
 	nc     *nats.Conn
 	js     nats.JetStreamContext
 	acc    *mastodon.Account
+	server string // Add server URL from config
 }
 
-func newMastodonService() (*MastodonService, error) {
-	if err := godotenv.Load(); err != nil {
-		return nil, err
-	}
-
-	if debug {
-		log.Printf("DEBUG: Connecting to Mastodon server: %s", os.Getenv("MASTODON_SERVER"))
+func newMastodonService(cfg *Config) (*MastodonService, error) {
+	if cfg.Debug {
+		log.Printf("DEBUG: Connecting to Mastodon server: %s", cfg.Server)
 	}
 
 	// Connect to mastodon
 	client := mastodon.NewClient(&mastodon.Config{
-		Server:      os.Getenv("MASTODON_SERVER"),
-		AccessToken: os.Getenv("MASTODON_ACCESS_TOKEN"),
+		Server:      cfg.Server,
+		AccessToken: cfg.AccessToken,
 	})
 
 	// Connect to NATS
-	nc, err := nats.Connect(os.Getenv("NATS_URL"))
+	nc, err := nats.Connect(strings.Join(cfg.NatsURLs, ","))
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +94,7 @@ func newMastodonService() (*MastodonService, error) {
 		client: client,
 		nc:     nc,
 		js:     js,
+		server: cfg.Server,
 	}
 
 	// Get account info
@@ -86,8 +104,8 @@ func newMastodonService() (*MastodonService, error) {
 	}
 	svc.acc = acc
 
-	if debug {
-		log.Printf("DEBUG: Logged in as %s", acc.Acct) // acc.Acct already contains the full @user@domain
+	if cfg.Debug {
+		log.Printf("DEBUG: Logged in as %s", acc.Acct)
 		log.Printf("DEBUG: Account stats - Following: %d, Followers: %d, Posts: %d",
 			acc.FollowingCount, acc.FollowersCount, acc.StatusesCount)
 	}
@@ -103,7 +121,7 @@ func (s *MastodonService) getDomain() string {
 		}
 	}
 	if domain == "" {
-		u, err := url.Parse(os.Getenv("MASTODON_SERVER"))
+		u, err := url.Parse(s.server)
 		if err != nil {
 			return "unknown"
 		}
@@ -237,13 +255,24 @@ func (s *MastodonService) handlePost(req micro.Request) {
 }
 
 func main() {
-	flag.Parse()
+	configFile, err := agent.FindConfigFile("mastodon-agent")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	cfg, err := agent.LoadConfig[*Config](configFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	debug = cfg.Debug // Set global debug flag
 
 	if debug {
 		log.Printf("DEBUG: Debug logging enabled")
+		log.Printf("DEBUG: Using config file: %s", configFile)
 	}
 
-	svc, err := newMastodonService()
+	svc, err := newMastodonService(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}

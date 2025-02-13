@@ -1,0 +1,4 @@
+debug = true
+server = "https://mastodon.social"
+access_token = "your-access-token-here"
+nats_urls = ["nats://localhost:4222"]
