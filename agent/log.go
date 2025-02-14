@@ -1,7 +1,9 @@
 package agent
 
 import (
-	"log"
+	"fmt"
+	"log/slog"
+	"os"
 )
 
 // Logger provides logging interface
@@ -13,24 +15,38 @@ type Logger interface {
 
 // DefaultLogger implements basic logging
 type DefaultLogger struct {
-	debug bool
+	logger *slog.Logger
+	debug  bool
 }
 
 // NewLogger creates a new logger
 func NewLogger(debug bool) Logger {
-	return &DefaultLogger{debug: debug}
+	opts := &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}
+	if debug {
+		opts.Level = slog.LevelDebug
+	}
+
+	handler := slog.NewTextHandler(os.Stdout, opts)
+	logger := slog.New(handler)
+
+	return &DefaultLogger{
+		logger: logger,
+		debug:  debug,
+	}
 }
 
 func (l *DefaultLogger) Debug(format string, v ...interface{}) {
 	if l.debug {
-		log.Printf("DEBUG: "+format, v...)
+		l.logger.Debug(fmt.Sprintf(format, v...))
 	}
 }
 
 func (l *DefaultLogger) Info(format string, v ...interface{}) {
-	log.Printf("INFO: "+format, v...)
+	l.logger.Info(fmt.Sprintf(format, v...))
 }
 
 func (l *DefaultLogger) Error(format string, v ...interface{}) {
-	log.Printf("ERROR: "+format, v...)
+	l.logger.Error(fmt.Sprintf(format, v...))
 }
