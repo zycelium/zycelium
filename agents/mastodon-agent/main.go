@@ -30,6 +30,7 @@ type Config struct {
 	Server      string   `toml:"server"`
 	AccessToken string   `toml:"access_token"`
 	NatsURLs    []string `toml:"nats_urls"`
+	UserStream  bool     `toml:"user_stream"` // Add user_stream option
 }
 
 // Validate implements agent.Configurable interface
@@ -48,10 +49,12 @@ func (c Config) Validate() error { // Changed from pointer receiver to value rec
 
 type MastodonService struct {
 	*agent.BaseService
-	client *mastodon.Client
-	acc    *mastodon.Account
-	logger agent.Logger
-	server string
+	client     *mastodon.Client
+	acc        *mastodon.Account
+	logger     agent.Logger
+	server     string
+	userStream bool      // Track current stream setting
+	streamDone chan bool // Channel to control stream
 }
 
 func NewMastodonService(cfg Config, opts *agent.Options) (*MastodonService, error) {
@@ -74,6 +77,8 @@ func NewMastodonService(cfg Config, opts *agent.Options) (*MastodonService, erro
 		client:      client,
 		logger:      agent.NewLogger(opts.Debug),
 		server:      cfg.Server, // Store server URL
+		userStream:  cfg.UserStream,
+		streamDone:  make(chan bool),
 	}
 
 	// Get account info
@@ -174,6 +179,34 @@ func (s *MastodonService) connectWithRetry(ctx context.Context) (chan mastodon.E
 	}
 }
 
+func (s *MastodonService) startStream(ctx context.Context) {
+	if !s.userStream {
+		return
+	}
+	go s.streamHomeTimeline(ctx)
+}
+
+func (s *MastodonService) stopStream() {
+	if s.streamDone != nil {
+		close(s.streamDone)
+		// Wait a short time for stream to stop
+		time.Sleep(100 * time.Millisecond)
+		s.streamDone = make(chan bool)
+	}
+}
+
+func (s *MastodonService) setUserStream(enabled bool) {
+	if s.userStream == enabled {
+		return
+	}
+	s.userStream = enabled
+	if enabled {
+		s.startStream(context.Background())
+	} else {
+		s.stopStream()
+	}
+}
+
 func (s *MastodonService) streamHomeTimeline(ctx context.Context) {
 	s.logger.Debug("Starting home timeline stream")
 
@@ -185,7 +218,10 @@ func (s *MastodonService) streamHomeTimeline(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			s.logger.Debug("Stream shutting down")
+			s.logger.Debug("Stream shutting down due to context cancellation")
+			return
+		case <-s.streamDone:
+			s.logger.Debug("Stream shutting down due to configuration change")
 			return
 		default:
 			eventChan, err := s.connectWithRetry(ctx)
@@ -194,8 +230,25 @@ func (s *MastodonService) streamHomeTimeline(ctx context.Context) {
 				return
 			}
 
-			// Handle events until connection breaks
+			// Create a separate context for event processing
+			eventCtx, eventCancel := context.WithCancel(ctx)
+			go func() {
+				select {
+				case <-s.streamDone:
+					s.logger.Debug("Canceling event processing")
+					eventCancel()
+				case <-ctx.Done():
+					eventCancel()
+				}
+			}()
+
+			// Handle events until connection breaks or stop is requested
 			for event := range eventChan {
+				if eventCtx.Err() != nil {
+					s.logger.Debug("Event processing canceled")
+					return
+				}
+
 				s.logger.Debug("Received event type: %T", event)
 
 				switch e := event.(type) {
@@ -216,13 +269,16 @@ func (s *MastodonService) streamHomeTimeline(ctx context.Context) {
 				case *mastodon.ErrorEvent:
 					s.logger.Error("Stream error: %v", e.Error())
 				case nil:
-					// Connection closed
-					s.logger.Debug("Stream connection closed, attempting reconnection")
+					eventCancel()
 					goto reconnect
 				}
 			}
 
+			eventCancel()
 		reconnect:
+			if eventCtx.Err() != nil {
+				return
+			}
 			s.logger.Debug("Stream disconnected, attempting reconnection")
 		}
 	}
@@ -258,8 +314,18 @@ func main() {
 		log.Printf("WARNING: Failed to sync config: %v", err)
 	}
 
-	// Start streaming timeline in background
-	go svc.streamHomeTimeline(ctx)
+	// Setup config watching
+	if err := agent.WatchConfigKeys(ctx, svc.BaseService.NATS(), "mastodon", []string{"user_stream"}, func(e agent.ConfigEvent) {
+		if val, ok := e.Value.(bool); ok {
+			svc.logger.Debug("Updating user_stream setting to: %v", val)
+			svc.setUserStream(val)
+		}
+	}); err != nil {
+		log.Printf("WARNING: Failed to setup config watching: %v", err)
+	}
+
+	// Start streaming timeline if enabled
+	svc.startStream(ctx)
 
 	// Run service until context is canceled
 	if err := svc.Run(ctx); err != nil {

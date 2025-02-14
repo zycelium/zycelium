@@ -37,10 +37,10 @@ The `capitalize` setting can be changed at runtime through the NATS KV store:
 
 ```bash
 # Set capitalize to true to get uppercase responses
-nats kv put zycelium_agent_hello_config capitalize true
+nats kv put hello_config capitalize true
 
 # Set capitalize to false for normal responses
-nats kv put zycelium_agent_hello_config capitalize false
+nats kv put hello_config capitalize false
 ```
 
 When capitalize is enabled:

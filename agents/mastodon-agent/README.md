@@ -46,3 +46,29 @@ nats req 'mastodon.post.fosstodon_org.bob.now' 'Hello from Bob!'
 ```
 
 Each agent only handles requests for its specific instance and username combination. If no agent exists for the specified combination, the request will timeout.
+
+## Configuration
+
+The agent can be configured through both the configuration file and NATS KV store.
+
+### User Stream Control
+
+The home timeline stream can be enabled/disabled through:
+
+1. Configuration file (`mastodon-agent.conf`):
+
+```toml
+user_stream = true  # or false
+```
+
+1. NATS KV store:
+
+```bash
+# Enable user stream
+nats kv put mastodon_config user_stream true
+
+# Disable user stream
+nats kv put mastodon_config user_stream false
+```
+
+The stream setting can be changed dynamically without restarting the agent.
