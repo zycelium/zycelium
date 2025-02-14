@@ -67,13 +67,17 @@ func FindConfigFile(name string) (string, error) {
 var validKeyRe = regexp.MustCompile(`^[-/_=\.a-zA-Z0-9]+$`)
 
 // SyncConfig synchronizes configuration with NATS KV store
-func SyncConfig[T Configurable](nc *nats.Conn, name string, config *T) error {
+func SyncConfig[T Configurable](nc *nats.Conn, name string, config T) error {
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+
 	js, err := nc.JetStream()
 	if err != nil {
 		return fmt.Errorf("failed to get JetStream context: %w", err)
 	}
 
-	bucketName := fmt.Sprintf("zycelium.agent.%s.config", name)
+	bucketName := MakeKVBucketName(name, "CONFIG")
 	kv, err := js.KeyValue(bucketName)
 	if err != nil {
 		// Try to create if doesn't exist
@@ -91,7 +95,14 @@ func SyncConfig[T Configurable](nc *nats.Conn, name string, config *T) error {
 
 	// Convert config to map using reflection
 	configMap := make(map[string]interface{})
-	val := reflect.ValueOf(config).Elem()
+	val := reflect.ValueOf(config)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+
+	if val.Kind() != reflect.Struct {
+		return fmt.Errorf("config must be a struct, got %s", val.Kind())
+	}
 
 	var process func(reflect.Value, string)
 	process = func(v reflect.Value, prefix string) {
@@ -172,12 +183,16 @@ type ConfigEvent struct {
 
 // WatchConfig monitors configuration changes and calls the provided callback function
 func WatchConfig(ctx context.Context, nc *nats.Conn, name string, callback func(ConfigEvent)) error {
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+
 	js, err := nc.JetStream()
 	if err != nil {
 		return fmt.Errorf("failed to get JetStream context: %w", err)
 	}
 
-	bucketName := fmt.Sprintf("zycelium.agent.%s.config", name)
+	bucketName := MakeKVBucketName(name, "CONFIG")
 	kv, err := js.KeyValue(bucketName)
 	if err != nil {
 		return fmt.Errorf("failed to get KV bucket: %w", err)
@@ -230,12 +245,16 @@ func WatchConfig(ctx context.Context, nc *nats.Conn, name string, callback func(
 
 // WatchConfigKey monitors specific configuration keys and calls the provided callback function
 func WatchConfigKeys(ctx context.Context, nc *nats.Conn, name string, keys []string, callback func(ConfigEvent)) error {
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+
 	js, err := nc.JetStream()
 	if err != nil {
 		return fmt.Errorf("failed to get JetStream context: %w", err)
 	}
 
-	bucketName := fmt.Sprintf("zycelium.agent.%s.config", name)
+	bucketName := MakeKVBucketName(name, "CONFIG")
 	kv, err := js.KeyValue(bucketName)
 	if err != nil {
 		return fmt.Errorf("failed to get KV bucket: %w", err)
