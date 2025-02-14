@@ -31,7 +31,7 @@ func ValidateSubject(subject string) error {
 
 // MakeKVBucketName generates a standardized KV bucket name
 func MakeKVBucketName(name, purpose string) string {
-	parts := []string{"ZYCELIUM", "AGENT", strings.ToUpper(name), strings.ToUpper(purpose)}
+	parts := []string{"zycelium", "agent", strings.ToLower(name), strings.ToLower(purpose)}
 	return strings.Join(parts, "_")
 }
 
