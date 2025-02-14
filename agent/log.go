@@ -10,6 +10,7 @@ import (
 type Logger interface {
 	Debug(format string, v ...interface{})
 	Info(format string, v ...interface{})
+	Warning(format string, v ...interface{})
 	Error(format string, v ...interface{})
 }
 
@@ -45,6 +46,10 @@ func (l *DefaultLogger) Debug(format string, v ...interface{}) {
 
 func (l *DefaultLogger) Info(format string, v ...interface{}) {
 	l.logger.Info(fmt.Sprintf(format, v...))
+}
+
+func (l *DefaultLogger) Warning(format string, v ...interface{}) {
+	l.logger.Warn(fmt.Sprintf(format, v...))
 }
 
 func (l *DefaultLogger) Error(format string, v ...interface{}) {
